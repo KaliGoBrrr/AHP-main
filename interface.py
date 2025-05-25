@@ -6,6 +6,8 @@ import requests
 from datetime import datetime
 import pytz
 from ahp_calculator import calculate_ahp
+import openpyxl
+from io import BytesIO
 
 # Hàm gọi API
 def safe_api_request(method, endpoint, data=None):
@@ -61,6 +63,46 @@ def convert_to_float(value):
         except ValueError:
             raise ValueError(f"Giá trị không phải số: {value}")
     raise ValueError(f"Giá trị không hợp lệ: {value}")
+
+# Hàm tạo file Excel từ dữ liệu AHP
+def create_excel_file(criteria_names, vehicle_names, criteria_matrix, alternative_matrices, criteria_weights, ranking, consistency_ratios, criteria_cr):
+    output = BytesIO()
+    wb = openpyxl.Workbook()
+    
+    # Sheet MTSS (ma trận tiêu chí)
+    ws = wb.active
+    ws.title = "MTSS"
+    ws.append([""] + criteria_names)
+    for i, row in enumerate(criteria_matrix):
+        ws.append([criteria_names[i]] + [f"{val:.2f}" if val != int(val) else str(int(val)) for val in row])
+    
+    # Sheets MTSS - <tên tiêu chí> (ma trận xe)
+    for crit_idx, criterion in enumerate(criteria_names):
+        ws = wb.create_sheet(f"MTSS - {criterion}")
+        ws.append([""] + vehicle_names)
+        matrix = alternative_matrices[crit_idx]
+        for i, row in enumerate(matrix):
+            ws.append([vehicle_names[i]] + [f"{val:.2f}" if val != int(val) else str(int(val)) for val in row])
+    
+    # Sheet Results
+    ws = wb.create_sheet("Results")
+    ws.append(["Trọng số tiêu chí"])
+    for name, weight in zip(criteria_names, criteria_weights):
+        ws.append([name, f"{weight:.4f}"])
+    ws.append([])
+    ws.append(["Xếp hạng xe"])
+    ws.append(["Xe", "Điểm AHP"])
+    for name, score in ranking:
+        ws.append([name, f"{score:.4f}"])
+    ws.append([])
+    ws.append(["Độ nhất quán"])
+    ws.append(["Tiêu chí", "CR"])
+    ws.append(["Tiêu chí tổng thể", f"{criteria_cr:.4f}"])
+    for name, cr in zip(criteria_names, consistency_ratios):
+        ws.append([name, f"{cr:.4f}"])
+    
+    wb.save(output)
+    return output.getvalue()
 
 # Bước 1: Quản lý tiêu chí và xe
 def criteria_management_step():
@@ -233,9 +275,9 @@ def pairwise_comparison_step():
             weights_html += f"<li>{criteria_names[i]}: {w:.4f}</li>"
         weights_html += f"</ul><p>CR = {cr:.4f} ({'Nhất quán' if cr < 0.1 else 'Không nhất quán'})</p>"
 
-        return matrix_html, weights_html, weights, cr
+        return matrix_html, weights_html, weights, cr, matrix
 
-    matrix_html, weights_html, weights, cr = update_matrix_and_weights(inputs)
+    matrix_html, weights_html, weights, cr, criteria_matrix = update_matrix_and_weights(inputs)
     st.markdown("### Ma trận so sánh cặp")
     st.markdown(matrix_html, unsafe_allow_html=True)
     st.markdown("### Trọng số tiêu chí")
@@ -251,6 +293,7 @@ def pairwise_comparison_step():
             else:
                 st.success(response.get("message", "Lưu trọng số thành công."))
                 st.session_state.weights_saved = True
+                st.session_state.criteria_matrix = criteria_matrix  # Lưu ma trận tiêu chí
                 st.rerun()
 
     if st.session_state.get("weights_saved", False):
@@ -422,6 +465,24 @@ def alternatives_comparison_step():
             st.error(f"Lỗi khi lưu log: {response['error']} (Mã trạng thái: {response.get('status_code', 'N/A')})")
         else:
             st.success("Lưu log tính toán thành công.")
+
+        # Xuất file Excel
+        criteria_matrix = st.session_state.get("criteria_matrix", np.ones((len(criteria_names), len(criteria_names))))
+        response = safe_api_request("GET", "get_criteria_weights")
+        criteria_weights = response.get("weights", [1/len(criteria_names)] * len(criteria_names))
+        criteria_cr_response = safe_api_request("GET", "get_criteria_weights")
+        criteria_cr = criteria_cr_response.get("cr", 0.0) if "cr" in criteria_cr_response else 0.0
+
+        excel_data = create_excel_file(
+            criteria_names, vehicle_names, criteria_matrix, alternative_matrices,
+            criteria_weights, ranking, consistency_ratios, criteria_cr
+        )
+        st.download_button(
+            label="Xuất kết quả Excel",
+            data=excel_data,
+            file_name="ahp_results_manual.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
 
     if st.button("Quay lại bước 2"):
         st.session_state.step = "pairwise_comparison"
@@ -645,6 +706,18 @@ def excel_calculation_step():
                 else:
                     st.success("Lưu log tính toán thành công.")
                     st.session_state.excel_log_saved = True
+
+            # Xuất file Excel
+            excel_data = create_excel_file(
+                criteria_names, vehicle_names, criteria_matrix, alternative_matrices,
+                criteria_weights, ranking, consistency_ratios, criteria_cr
+            )
+            st.download_button(
+                label="Xuất kết quả Excel",
+                data=excel_data,
+                file_name="ahp_results_excel.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
 
         except Exception as e:
             st.error(f"Lỗi khi xử lý file Excel: {str(e)}")
