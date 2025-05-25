@@ -1,0 +1,4 @@
+timestamp,weights,top_result
+2025-04-13T11:36:25.776528,"[0.1, 0.5, 0.1, 0.2, 0.1]","[('Tesla Model 3', 0.859), ('Ford Mustang', 0.829), ('Honda Civic', 0.791)]"
+//uvicorn main:app --reload
+//python interface.py

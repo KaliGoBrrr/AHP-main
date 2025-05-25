@@ -1,0 +1,1 @@
+pip install streamlit fastapi uvicorn pymongo numpy pydantic requests python-dotenv plotly
