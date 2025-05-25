@@ -93,39 +93,6 @@ def init_vehicles(vehicles_collection, force=False):
                         "engine": "2.0L",
                         "price_range": "825-1 tỷ VNĐ"
                     }
-                },
-                {
-                    "name": "Kia Seltos",
-                    "image": "kia_seltos.jpg",
-                    "details": {
-                        "brand": "Kia",
-                        "year": 2023,
-                        "type": "SUV cỡ B",
-                        "engine": "1.5L",
-                        "price_range": "600-720 triệu VNĐ"
-                    }
-                },
-                {
-                    "name": "Mitsubishi Xpander",
-                    "image": "mitsubishi_xpander.jpg",
-                    "details": {
-                        "brand": "Mitsubishi",
-                        "year": 2023,
-                        "type": "MPV",
-                        "engine": "1.5L",
-                        "price_range": "560-670 triệu VNĐ"
-                    }
-                },
-                {
-                    "name": "VinFast VF8",
-                    "image": "vinfast_vf8.jpg",
-                    "details": {
-                        "brand": "VinFast",
-                        "year": 2023,
-                        "type": "SUV điện",
-                        "engine": "Electric Dual Motor",
-                        "price_range": "1.1-1.3 tỷ VNĐ"
-                    }
                 }
             ]
             # Kiểm tra tính duy nhất của name
