@@ -295,47 +295,55 @@ def alternatives_comparison_step():
             st.rerun()
         return
 
+    # Khởi tạo danh sách để lưu input và ma trận
     alternative_inputs = []
     matrix_outputs = []
-    for crit_idx, criterion in enumerate(criteria_names):
-        st.markdown(f"### Tiêu chí: {criterion}")
-        inputs = []
-        for i in range(len(vehicle_names)):
-            for j in range(i + 1, len(vehicle_names)):
-                key = f"{criterion}_{vehicle_names[i]}_vs_{vehicle_names[j]}"
-                value = st.session_state.get(key, 1.0)
-                slider = st.slider(
-                    f"{vehicle_names[i]} so với {vehicle_names[j]}",
-                    min_value=0.1, max_value=9.0, step=0.1, value=value,
-                    key=key
-                )
-                inputs.append(slider)
-        alternative_inputs.append(inputs)
 
-        matrix = np.ones((len(vehicle_names), len(vehicle_names)))
-        input_idx = 0
-        for i in range(len(vehicle_names)):
-            for j in range(i + 1, len(vehicle_names)):
-                matrix[i][j] = inputs[input_idx]
-                matrix[j][i] = 1.0 / inputs[input_idx]
-                input_idx += 1
-        col_sums = np.sum(matrix, axis=0)
-        normalized_matrix = matrix / col_sums
-        weights = np.mean(normalized_matrix, axis=1)
-        weighted_sum = np.dot(matrix, weights)
-        consistency_vector = weighted_sum / weights
-        lambda_max = np.mean(consistency_vector)
-        ci = (lambda_max - len(vehicle_names)) / (len(vehicle_names) - 1) if len(vehicle_names) > 1 else 0
-        ri_values = {1: 0, 2: 0, 3: 0.58, 4: 0.9, 5: 1.12, 6: 1.24, 7: 1.32, 8: 1.41, 9: 1.45, 10: 1.49}
-        ri = ri_values.get(len(vehicle_names), 1.5)
-        cr = ci / ri if ri != 0 else 0
-        html = matrix_to_html(matrix, vehicle_names)
-        html += f"<p>CR = {cr:.4f} ({'Nhất quán' if cr < 0.1 else 'Không nhất quán'})</p>"
-        matrix_outputs.append(html)
+    # Tạo tabs cho từng tiêu chí
+    tabs = st.tabs(criteria_names)
 
-        st.markdown(f"#### Ma trận so sánh cặp ({criterion})")
-        st.markdown(html, unsafe_allow_html=True)
+    for crit_idx, tab in enumerate(tabs):
+        with tab:
+            st.markdown(f"### Tiêu chí: {criteria_names[crit_idx]}")
+            inputs = []
+            for i in range(len(vehicle_names)):
+                for j in range(i + 1, len(vehicle_names)):
+                    key = f"{criteria_names[crit_idx]}_{vehicle_names[i]}_vs_{vehicle_names[j]}"
+                    value = st.session_state.get(key, 1.0)
+                    slider = st.slider(
+                        f"{vehicle_names[i]} so với {vehicle_names[j]}",
+                        min_value=0.1, max_value=9.0, step=0.1, value=value,
+                        key=key
+                    )
+                    inputs.append(slider)
+            alternative_inputs.append(inputs)
 
+            # Tính toán ma trận cho tiêu chí
+            matrix = np.ones((len(vehicle_names), len(vehicle_names)))
+            input_idx = 0
+            for i in range(len(vehicle_names)):
+                for j in range(i + 1, len(vehicle_names)):
+                    matrix[i][j] = inputs[input_idx]
+                    matrix[j][i] = 1.0 / inputs[input_idx]
+                    input_idx += 1
+            col_sums = np.sum(matrix, axis=0)
+            normalized_matrix = matrix / col_sums
+            weights = np.mean(normalized_matrix, axis=1)
+            weighted_sum = np.dot(matrix, weights)
+            consistency_vector = weighted_sum / weights
+            lambda_max = np.mean(consistency_vector)
+            ci = (lambda_max - len(vehicle_names)) / (len(vehicle_names) - 1) if len(vehicle_names) > 1 else 0
+            ri_values = {1: 0, 2: 0, 3: 0.58, 4: 0.9, 5: 1.12, 6: 1.24, 7: 1.32, 8: 1.41, 9: 1.45, 10: 1.49}
+            ri = ri_values.get(len(vehicle_names), 1.5)
+            cr = ci / ri if ri != 0 else 0
+            html = matrix_to_html(matrix, vehicle_names)
+            html += f"<p>CR = {cr:.4f} ({'Nhất quán' if cr < 0.1 else 'Không nhất quán'})</p>"
+            matrix_outputs.append(html)
+
+            st.markdown(f"#### Ma trận so sánh cặp ({criteria_names[crit_idx]})")
+            st.markdown(html, unsafe_allow_html=True)
+
+    # Nút tính toán AHP
     if st.button("Tính toán AHP"):
         response = safe_api_request("GET", "get_criteria_weights")
         if "error" in response:
@@ -412,6 +420,8 @@ def alternatives_comparison_step():
         response = safe_api_request("POST", "log_calculation", log_data)
         if "error" in response:
             st.error(f"Lỗi khi lưu log: {response['error']} (Mã trạng thái: {response.get('status_code', 'N/A')})")
+        else:
+            st.success("Lưu log tính toán thành công.")
 
     if st.button("Quay lại bước 2"):
         st.session_state.step = "pairwise_comparison"
@@ -439,7 +449,11 @@ def excel_calculation_step():
         cr = ci / ri if ri != 0 else 0
         return weights, cr
 
-    uploaded_file = st.file_uploader("Chọn file Excel", type=["xlsx"])
+    # Khởi tạo trạng thái lưu log
+    if "excel_log_saved" not in st.session_state:
+        st.session_state.excel_log_saved = False
+
+    uploaded_file = st.file_uploader("Chọn file Excel", type=["xlsx"], key="excel_uploader")
 
     if uploaded_file:
         try:
@@ -574,20 +588,22 @@ def excel_calculation_step():
             weights_fig.update_traces(textinfo='percent+label')
             st.plotly_chart(weights_fig)
 
-            # Lưu log
-            log_data = {
-                "weights": criteria_weights.tolist(),
-                "top_result": [[name, score] for name, score in ranking[:3]],
-                "criteria_matrices": [{"vehicle_" + str(i+1) + "_vs_" + str(j+1): matrix[i][j]
-                                      for i in range(len(vehicle_names))
-                                      for j in range(i + 1, len(vehicle_names))}
-                                     for matrix in alternative_matrices]
-            }
-            response = safe_api_request("POST", "log_calculation", log_data)
-            if "error" in response:
-                st.error(f"Lỗi khi lưu log: {response['error']} (Mã trạng thái: {response.get('status_code', 'N/A')})")
-            else:
-                st.success("Lưu log tính toán thành công.")
+            # Lưu log (chỉ lưu một lần)
+            if not st.session_state.excel_log_saved:
+                log_data = {
+                    "weights": criteria_weights.tolist(),
+                    "top_result": [[name, score] for name, score in ranking[:3]],
+                    "criteria_matrices": [{"vehicle_" + str(i+1) + "_vs_" + str(j+1): matrix[i][j]
+                                          for i in range(len(vehicle_names))
+                                          for j in range(i + 1, len(vehicle_names))}
+                                         for matrix in alternative_matrices]
+                }
+                response = safe_api_request("POST", "log_calculation", log_data)
+                if "error" in response:
+                    st.error(f"Lỗi khi lưu log: {response['error']} (Mã trạng thái: {response.get('status_code', 'N/A')})")
+                else:
+                    st.success("Lưu log tính toán thành công.")
+                    st.session_state.excel_log_saved = True
 
         except Exception as e:
             st.error(f"Lỗi khi xử lý file Excel: {str(e)}")
@@ -659,12 +675,7 @@ st.markdown("Vui lòng thực hiện các bước theo thứ tự hoặc sử d�
 
 with st.sidebar:
     st.header("Điều hướng")
-    step = st.selectbox(
-        "Chọn bước",
-        ["Quản lý tiêu chí và xe", "So sánh cặp tiêu chí", "So sánh cặp xe", "Tính AHP từ Excel", "Xem lịch sử tính toán"],
-        index=["criteria_management", "pairwise_comparison", "alternatives_comparison", "excel_calculation", "log"].index(st.session_state.get("step", "criteria_management"))
-    )
-    if st.button("Chuyển đến bước"):
+    def change_step():
         st.session_state.previous_step = st.session_state.get("step", "criteria_management")
         st.session_state.step = {
             "Quản lý tiêu chí và xe": "criteria_management",
@@ -672,8 +683,15 @@ with st.sidebar:
             "So sánh cặp xe": "alternatives_comparison",
             "Tính AHP từ Excel": "excel_calculation",
             "Xem lịch sử tính toán": "log"
-        }[step]
-        st.rerun()
+        }[st.session_state.step_select]
+
+    step = st.selectbox(
+        "Chọn bước",
+        ["Quản lý tiêu chí và xe", "So sánh cặp tiêu chí", "So sánh cặp xe", "Tính AHP từ Excel", "Xem lịch sử tính toán"],
+        index=["criteria_management", "pairwise_comparison", "alternatives_comparison", "excel_calculation", "log"].index(st.session_state.get("step", "criteria_management")),
+        key="step_select",
+        on_change=change_step
+    )
 
 if "step" not in st.session_state:
     st.session_state.step = "criteria_management"
