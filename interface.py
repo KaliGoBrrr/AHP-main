@@ -430,7 +430,48 @@ def alternatives_comparison_step():
 # Bước 4: Tính AHP từ Excel
 def excel_calculation_step():
     st.markdown("## Bước 4: Tính AHP từ file Excel")
-    st.markdown("Tải lên file Excel chứa ma trận so sánh tiêu chí (sheet 'MTSS') và ma trận so sánh xe (sheets 'MTSS - {tên tiêu chí}'). Kết quả sẽ hiển thị trực tiếp trên giao diện.")
+    st.markdown("""
+    Tải lên file Excel chứa ma trận so sánh tiêu chí (sheet 'MTSS') và ma trận so sánh xe (sheets 'MTSS - {tên tiêu chí}').
+    File cần có cấu trúc như sau:
+    - **Sheet `MTSS`**: Ma trận so sánh cặp giữa các tiêu chí, với tiêu chí ở cột và hàng đầu tiên.
+    - **Sheets `MTSS - <tên tiêu chí>`**: Ma trận so sánh cặp giữa các xe cho từng tiêu chí, với tên xe ở cột và hàng đầu tiên.
+    - Giá trị so sánh có thể là số nguyên (1, 3), thập phân (0.5), hoặc phân số (1/2, 1/3).
+    - Ô trên đường chéo chính phải là 1. Không để trống ô.
+    """)
+
+    # Hiển thị ví dụ
+    with st.expander("Xem ví dụ định dạng file Excel"):
+        st.markdown("""
+        ### Ví dụ file Excel với 3 tiêu chí (Độ bền, Hiệu suất, Giá bán) và 3 xe (Winner X, NVX 155, Vario 160)
+        
+        #### Sheet `MTSS` (Ma trận so sánh tiêu chí)
+        |               | Độ bền | Hiệu suất | Giá bán |
+        |---------------|--------|-----------|---------|
+        | **Độ bền**    | 1      | 3         | 5       |
+        | **Hiệu suất** | 1/3    | 1         | 2       |
+        | **Giá bán**   | 1/5    | 1/2       | 1       |
+
+        #### Sheet `MTSS - Độ bền` (Ma trận so sánh xe)
+        |               | Winner X | NVX 155 | Vario 160 |
+        |---------------|----------|---------|-----------|
+        | **Winner X**  | 1        | 2       | 4         |
+        | **NVX 155**   | 1/2      | 1       | 2         |
+        | **Vario 160** | 1/4      | 1/2     | 1         |
+
+        #### Sheet `MTSS - Hiệu suất`
+        |               | Winner X | NVX 155 | Vario 160 |
+        |---------------|----------|---------|-----------|
+        | **Winner X**  | 1        | 1/2     | 1/3       |
+        | **NVX 155**   | 2        | 1       | 1/2       |
+        | **Vario 160** | 3        | 2       | 1         |
+
+        #### Sheet `MTSS - Giá bán`
+        |               | Winner X | NVX 155 | Vario 160 |
+        |---------------|----------|---------|-----------|
+        | **Winner X**  | 1        | 3       | 5         |
+        | **NVX 155**   | 1/3      | 1       | 2         |
+        | **Vario 160** | 1/5      | 1/2     | 1         |
+        """)
 
     # Hàm tính trọng số và CR từ ma trận so sánh
     def compute_weights_and_cr(matrix, n):
