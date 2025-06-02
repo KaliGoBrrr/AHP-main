@@ -8,6 +8,13 @@ import pytz
 from ahp_calculator import calculate_ahp
 import openpyxl
 from io import BytesIO
+from reportlab.lib.pagesizes import A4
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 
 # Hàm gọi API
 def safe_api_request(method, endpoint, data=None):
@@ -102,6 +109,118 @@ def create_excel_file(criteria_names, vehicle_names, criteria_matrix, alternativ
         ws.append([name, f"{cr:.4f}"])
     
     wb.save(output)
+    return output.getvalue()
+
+# Hàm tạo file PDF từ dữ liệu AHP
+def create_pdf_file(criteria_names, vehicle_names, criteria_matrix, alternative_matrices, criteria_weights, ranking, consistency_ratios, criteria_cr):
+    output = BytesIO()
+    doc = SimpleDocTemplate(output, pagesize=A4, rightMargin=0.75*inch, leftMargin=0.75*inch, topMargin=0.75*inch, bottomMargin=0.75*inch)
+    styles = getSampleStyleSheet()
+
+    # Đăng ký font Arial hỗ trợ tiếng Việt
+    try:
+        pdfmetrics.registerFont(TTFont('Arial', 'arial.ttf'))
+    except Exception as e:
+        # Nếu không tìm thấy arial.ttf, sử dụng font mặc định và cảnh báo
+        st.warning("Font Arial không khả dụng, sử dụng font mặc định. Có thể không hiển thị đúng tiếng Việt.")
+        print(f"Lỗi khi đăng ký font Arial: {str(e)}")
+
+    # Cập nhật style để sử dụng font Arial
+    title_style = ParagraphStyle(name='Title', fontName='Arial', fontSize=16, alignment=1, spaceAfter=12)
+    heading_style = ParagraphStyle(name='Heading2', fontName='Arial', fontSize=12, spaceAfter=12)
+    normal_style = ParagraphStyle(name='Normal', fontName='Arial', fontSize=10, spaceAfter=12)
+
+    elements = []
+
+    # Tiêu đề
+    elements.append(Paragraph("Kết quả phân tích AHP", title_style))
+    elements.append(Spacer(1, 12))
+
+    # Ma trận tiêu chí
+    elements.append(Paragraph("Ma trận so sánh cặp tiêu chí", heading_style))
+    data = [[""] + criteria_names]
+    for i, row in enumerate(criteria_matrix):
+        data.append([criteria_names[i]] + [f"{val:.2f}" if val != int(val) else str(int(val)) for val in row])
+    table = Table(data)
+    table.setStyle(TableStyle([
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+        ('FONTNAME', (0, 0), (-1, -1), 'Arial'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    ]))
+    elements.append(table)
+    elements.append(Paragraph(f"Độ nhất quán (CR): {criteria_cr:.4f} ({'Nhất quán' if criteria_cr < 0.1 else 'Không nhất quán'})", normal_style))
+    elements.append(Spacer(1, 12))
+
+    # Ma trận xe
+    for crit_idx, criterion in enumerate(criteria_names):
+        elements.append(Paragraph(f"Ma trận so sánh cặp xe - {criterion}", heading_style))
+        data = [[""] + vehicle_names]
+        matrix = alternative_matrices[crit_idx]
+        for i, row in enumerate(matrix):
+            data.append([vehicle_names[i]] + [f"{val:.2f}" if val != int(val) else str(int(val)) for val in row])
+        table = Table(data)
+        table.setStyle(TableStyle([
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ('FONTNAME', (0, 0), (-1, -1), 'Arial'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
+        elements.append(table)
+        elements.append(Paragraph(f"Độ nhất quán (CR): {consistency_ratios[crit_idx]:.4f} ({'Nhất quán' if consistency_ratios[crit_idx] < 0.1 else 'Không nhất quán'})", normal_style))
+        elements.append(Spacer(1, 12))
+
+    # Trọng số tiêu chí
+    elements.append(Paragraph("Trọng số tiêu chí", heading_style))
+    data = [["Tiêu chí", "Trọng số"]]
+    for name, weight in zip(criteria_names, criteria_weights):
+        data.append([name, f"{weight:.4f}"])
+    table = Table(data)
+    table.setStyle(TableStyle([
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+        ('FONTNAME', (0, 0), (-1, -1), 'Arial'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    ]))
+    elements.append(table)
+    elements.append(Spacer(1, 12))
+
+    # Kết quả xếp hạng
+    elements.append(Paragraph("Xếp hạng xe", heading_style))
+    data = [["Xe", "Điểm AHP"]]
+    for name, score in ranking:
+        data.append([name, f"{score:.4f}"])
+    table = Table(data)
+    table.setStyle(TableStyle([
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+        ('FONTNAME', (0, 0), (-1, -1), 'Arial'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    ]))
+    elements.append(table)
+    elements.append(Spacer(1, 12))
+
+    # Độ nhất quán
+    elements.append(Paragraph("Độ nhất quán", heading_style))
+    data = [["Tiêu chí", "CR"]]
+    data.append(["Tiêu chí tổng thể", f"{criteria_cr:.4f}"])
+    for name, cr in zip(criteria_names, consistency_ratios):
+        data.append([name, f"{cr:.4f}"])
+    table = Table(data)
+    table.setStyle(TableStyle([
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+        ('FONTNAME', (0, 0), (-1, -1), 'Arial'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    ]))
+    elements.append(table)
+
+    doc.build(elements)
     return output.getvalue()
 
 # Bước 1: Quản lý tiêu chí và xe
@@ -293,7 +412,7 @@ def pairwise_comparison_step():
             else:
                 st.success(response.get("message", "Lưu trọng số thành công."))
                 st.session_state.weights_saved = True
-                st.session_state.criteria_matrix = criteria_matrix  # Lưu ma trận tiêu chí
+                st.session_state.criteria_matrix = criteria_matrix
                 st.rerun()
 
     if st.session_state.get("weights_saved", False):
@@ -338,11 +457,9 @@ def alternatives_comparison_step():
             st.rerun()
         return
 
-    # Khởi tạo danh sách để lưu input và ma trận
     alternative_inputs = []
     matrix_outputs = []
 
-    # Tạo tabs cho từng tiêu chí
     tabs = st.tabs(criteria_names)
 
     for crit_idx, tab in enumerate(tabs):
@@ -361,7 +478,6 @@ def alternatives_comparison_step():
                     inputs.append(slider)
             alternative_inputs.append(inputs)
 
-            # Tính toán ma trận cho tiêu chí
             matrix = np.ones((len(vehicle_names), len(vehicle_names)))
             input_idx = 0
             for i in range(len(vehicle_names)):
@@ -386,7 +502,6 @@ def alternatives_comparison_step():
             st.markdown(f"#### Ma trận so sánh cặp ({criteria_names[crit_idx]})")
             st.markdown(html, unsafe_allow_html=True)
 
-    # Nút tính toán AHP
     if st.button("Tính toán AHP"):
         response = safe_api_request("GET", "get_criteria_weights")
         if "error" in response:
@@ -466,7 +581,6 @@ def alternatives_comparison_step():
         else:
             st.success("Lưu log tính toán thành công.")
 
-        # Xuất file Excel
         criteria_matrix = st.session_state.get("criteria_matrix", np.ones((len(criteria_names), len(criteria_names))))
         response = safe_api_request("GET", "get_criteria_weights")
         criteria_weights = response.get("weights", [1/len(criteria_names)] * len(criteria_names))
@@ -482,6 +596,17 @@ def alternatives_comparison_step():
             data=excel_data,
             file_name="ahp_results_manual.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+
+        pdf_data = create_pdf_file(
+            criteria_names, vehicle_names, criteria_matrix, alternative_matrices,
+            criteria_weights, ranking, consistency_ratios, criteria_cr
+        )
+        st.download_button(
+            label="Xuất kết quả PDF",
+            data=pdf_data,
+            file_name="ahp_results_manual.pdf",
+            mime="application/pdf"
         )
 
     if st.button("Quay lại bước 2"):
@@ -500,7 +625,6 @@ def excel_calculation_step():
     - Ô trên đường chéo chính phải là 1. Không để trống ô.
     """)
 
-    # Hiển thị ví dụ
     with st.expander("Xem ví dụ định dạng file Excel"):
         st.markdown("""
         ### Ví dụ file Excel với 3 tiêu chí (Độ bền, Hiệu suất, Giá bán) và 3 xe (Winner X, NVX 155, Vario 160)
@@ -534,14 +658,13 @@ def excel_calculation_step():
         | **Vario 160** | 1/5      | 1/2     | 1         |
         """)
 
-    # Hàm tính trọng số và CR từ ma trận so sánh
     def compute_weights_and_cr(matrix, n):
         col_sums = np.sum(matrix, axis=0)
         if np.any(col_sums == 0):
             raise ValueError("Ma trận chứa cột có tổng bằng 0")
         normalized_matrix = matrix / col_sums
         weights = np.mean(normalized_matrix, axis=1)
-        weights = weights / np.sum(weights)  # Chuẩn hóa
+        weights = weights / np.sum(weights)
         weighted_sum = np.dot(matrix, weights)
         consistency_vector = weighted_sum / weights
         lambda_max = np.mean(consistency_vector)
@@ -551,7 +674,6 @@ def excel_calculation_step():
         cr = ci / ri if ri != 0 else 0
         return weights, cr
 
-    # Đặt lại trạng thái log khi tải file mới
     if "excel_log_saved" not in st.session_state or st.session_state.get("uploaded_file_key") != st.session_state.get("excel_uploader"):
         st.session_state.excel_log_saved = False
         st.session_state.uploaded_file_key = st.session_state.get("excel_uploader")
@@ -560,23 +682,19 @@ def excel_calculation_step():
 
     if uploaded_file:
         try:
-            # Đọc file Excel
             xls = pd.ExcelFile(uploaded_file)
             sheets = xls.sheet_names
 
-            # Kiểm tra sheet tiêu chí
             if "MTSS" not in sheets:
                 st.error("File Excel phải chứa sheet 'MTSS' cho ma trận so sánh tiêu chí.")
                 return
 
-            # Đọc ma trận tiêu chí
             criteria_df = pd.read_excel(uploaded_file, sheet_name="MTSS", index_col=0)
             criteria_names = criteria_df.index.tolist()
             if len(criteria_names) < 2:
                 st.error("Cần ít nhất 2 tiêu chí trong sheet 'MTSS'.")
                 return
 
-            # Chuyển đổi dữ liệu tiêu chí
             try:
                 criteria_df = criteria_df.applymap(convert_to_float)
             except ValueError as e:
@@ -586,7 +704,6 @@ def excel_calculation_step():
             criteria_df = criteria_df.fillna(0)
             criteria_matrix = criteria_df.to_numpy(dtype=float)
 
-            # Kiểm tra ma trận tiêu chí
             if criteria_matrix.shape != (len(criteria_names), len(criteria_names)):
                 st.error("Ma trận tiêu chí phải là ma trận vuông.")
                 return
@@ -594,15 +711,12 @@ def excel_calculation_step():
                 st.error("Ma trận tiêu chí chứa NaN hoặc giá trị vô cực.")
                 return
 
-            # Tính trọng số tiêu chí và CR
             criteria_weights, criteria_cr = compute_weights_and_cr(criteria_matrix, len(criteria_names))
 
-            # Hiển thị ma trận và CR tiêu chí
             st.markdown("### Ma trận so sánh cặp tiêu chí")
             st.markdown(matrix_to_html(criteria_matrix, criteria_names), unsafe_allow_html=True)
             st.markdown(f"### Độ nhất quán tiêu chí: CR = {criteria_cr:.4f} ({'Nhất quán' if criteria_cr < 0.1 else 'Không nhất quán'})")
 
-            # Đọc ma trận so sánh xe
             vehicle_names = None
             alternative_matrices = []
             consistency_ratios = []
@@ -621,7 +735,6 @@ def excel_calculation_step():
                     st.error(f"Sheet '{sheet_name}' có danh sách xe không khớp với các sheet khác.")
                     return
 
-                # Chuyển đổi dữ liệu xe
                 try:
                     df = df.applymap(convert_to_float)
                 except ValueError as e:
@@ -631,7 +744,6 @@ def excel_calculation_step():
                 df = df.fillna(0)
                 matrix = df.to_numpy(dtype=float)
 
-                # Kiểm tra ma trận xe
                 if matrix.shape != (len(vehicle_names), len(vehicle_names)):
                     st.error(f"Ma trận cho tiêu chí '{criterion}' phải là ma trận vuông.")
                     return
@@ -639,16 +751,13 @@ def excel_calculation_step():
                     st.error(f"Ma trận cho tiêu chí '{criterion}' chứa NaN hoặc giá trị vô cực.")
                     return
 
-                # Tính CR
                 _, cr = compute_weights_and_cr(matrix, len(vehicle_names))
                 consistency_ratios.append(cr)
                 alternative_matrices.append(matrix)
 
-                # Hiển thị ma trận xe và CR
                 st.markdown(f"### Ma trận so sánh cặp xe ({criterion})")
                 st.markdown(matrix_to_html(matrix, vehicle_names) + f"<p>CR = {cr:.4f} ({'Nhất quán' if cr < 0.1 else 'Không nhất quán'})</p>", unsafe_allow_html=True)
 
-            # Kiểm tra tính nhất quán tổng thể
             inconsistent_matrices = []
             if criteria_cr >= 0.1:
                 inconsistent_matrices.append("Tiêu chí tổng thể")
@@ -663,20 +772,16 @@ def excel_calculation_step():
                 st.error(f"Các ma trận không nhất quán (CR ≥ 0.1): {', '.join(inconsistent_matrices)}. Vui lòng sửa file Excel.")
                 calculate_enabled = False
 
-            # Nút tính AHP
             if st.button("Tính AHP", disabled=not calculate_enabled):
-                # Tính điểm AHP
                 n_vehicles = len(vehicle_names)
                 scores = np.zeros(n_vehicles)
                 for i, matrix in enumerate(alternative_matrices):
                     weights, _ = compute_weights_and_cr(matrix, n_vehicles)
                     scores += criteria_weights[i] * weights
 
-                # Tạo kết quả xếp hạng
                 ranking = [(vehicle_names[i], scores[i]) for i in range(n_vehicles)]
                 ranking.sort(key=lambda x: x[1], reverse=True)
 
-                # Hiển thị kết quả
                 html_result = "<h3>Kết quả xếp hạng:</h3>"
                 html_result += "<table border='1'><tr><th>Xe</th><th>Điểm AHP</th></tr>"
                 for name, score in ranking:
@@ -684,20 +789,17 @@ def excel_calculation_step():
                 html_result += "</table>"
                 st.markdown(html_result, unsafe_allow_html=True)
 
-                # Biểu đồ cột
                 fig = px.bar(x=[name for name, score in ranking], y=[score for name, score in ranking],
                              labels={'x': 'Xe', 'y': 'Điểm AHP'}, title='Xếp hạng xe')
                 fig.update_traces(texttemplate='%{y:.4f}', textposition='outside')
                 fig.update_layout(xaxis={'categoryorder': 'total descending'})
                 st.plotly_chart(fig)
 
-                # Biểu đồ tròn
                 weights_fig = px.pie(values=criteria_weights, names=criteria_names,
                                     title='Trọng số tiêu chí', hole=0.4)
                 weights_fig.update_traces(textinfo='percent+label')
                 st.plotly_chart(weights_fig)
 
-                # Lưu log
                 log_data = {
                     "weights": criteria_weights.tolist(),
                     "top_result": [[name, score] for name, score in ranking[:3]],
@@ -706,8 +808,6 @@ def excel_calculation_step():
                                           for j in range(i + 1, len(vehicle_names))}
                                          for matrix in alternative_matrices]
                 }
-                # Debug dữ liệu log
-                st.write("Debug: Dữ liệu gửi để lưu log:", log_data)
                 response = safe_api_request("POST", "log_calculation", log_data)
                 if "error" in response:
                     st.error(f"Lỗi khi lưu log: {response['error']} (Mã trạng thái: {response.get('status_code', 'N/A')})")
@@ -715,7 +815,6 @@ def excel_calculation_step():
                     st.success("Lưu log tính toán thành công.")
                     st.session_state.excel_log_saved = True
 
-                # Xuất file Excel
                 excel_data = create_excel_file(
                     criteria_names, vehicle_names, criteria_matrix, alternative_matrices,
                     criteria_weights, ranking, consistency_ratios, criteria_cr
@@ -727,8 +826,20 @@ def excel_calculation_step():
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
 
+                pdf_data = create_pdf_file(
+                    criteria_names, vehicle_names, criteria_matrix, alternative_matrices,
+                    criteria_weights, ranking, consistency_ratios, criteria_cr
+                )
+                st.download_button(
+                    label="Xuất kết quả PDF",
+                    data=pdf_data,
+                    file_name="ahp_results_excel.pdf",
+                    mime="application/pdf"
+                )
+
         except Exception as e:
             st.error(f"Lỗi khi xử lý file Excel: {str(e)}")
+            return
 
     if st.button("Quay lại bước 1"):
         st.session_state.step = "criteria_management"
