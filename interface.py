@@ -551,9 +551,10 @@ def excel_calculation_step():
         cr = ci / ri if ri != 0 else 0
         return weights, cr
 
-    # Khởi tạo trạng thái lưu log
-    if "excel_log_saved" not in st.session_state:
+    # Đặt lại trạng thái log khi tải file mới
+    if "excel_log_saved" not in st.session_state or st.session_state.get("uploaded_file_key") != st.session_state.get("excel_uploader"):
         st.session_state.excel_log_saved = False
+        st.session_state.uploaded_file_key = st.session_state.get("excel_uploader")
 
     uploaded_file = st.file_uploader("Chọn file Excel", type=["xlsx"], key="excel_uploader")
 
@@ -596,16 +597,10 @@ def excel_calculation_step():
             # Tính trọng số tiêu chí và CR
             criteria_weights, criteria_cr = compute_weights_and_cr(criteria_matrix, len(criteria_names))
 
-            # Hiển thị ma trận và trọng số tiêu chí
+            # Hiển thị ma trận và CR tiêu chí
             st.markdown("### Ma trận so sánh cặp tiêu chí")
             st.markdown(matrix_to_html(criteria_matrix, criteria_names), unsafe_allow_html=True)
-            st.markdown(f"### Trọng số tiêu chí (CR = {criteria_cr:.4f} - {'Nhất quán' if criteria_cr < 0.1 else 'Không nhất quán'})")
-            weights_html = "<ul>" + "".join(f"<li>{name}: {w:.4f}</li>" for name, w in zip(criteria_names, criteria_weights)) + "</ul>"
-            st.markdown(weights_html, unsafe_allow_html=True)
-
-            if criteria_cr >= 0.1:
-                st.error(f"Ma trận tiêu chí không nhất quán (CR = {criteria_cr:.4f}). Vui lòng kiểm tra lại file Excel.")
-                return
+            st.markdown(f"### Độ nhất quán tiêu chí: CR = {criteria_cr:.4f} ({'Nhất quán' if criteria_cr < 0.1 else 'Không nhất quán'})")
 
             # Đọc ma trận so sánh xe
             vehicle_names = None
@@ -644,54 +639,65 @@ def excel_calculation_step():
                     st.error(f"Ma trận cho tiêu chí '{criterion}' chứa NaN hoặc giá trị vô cực.")
                     return
 
-                # Tính trọng số xe và CR
-                weights, cr = compute_weights_and_cr(matrix, len(vehicle_names))
+                # Tính CR
+                _, cr = compute_weights_and_cr(matrix, len(vehicle_names))
                 consistency_ratios.append(cr)
                 alternative_matrices.append(matrix)
 
-                # Hiển thị ma trận xe
+                # Hiển thị ma trận xe và CR
                 st.markdown(f"### Ma trận so sánh cặp xe ({criterion})")
                 st.markdown(matrix_to_html(matrix, vehicle_names) + f"<p>CR = {cr:.4f} ({'Nhất quán' if cr < 0.1 else 'Không nhất quán'})</p>", unsafe_allow_html=True)
 
-            # Tính điểm AHP
-            n_vehicles = len(vehicle_names)
-            scores = np.zeros(n_vehicles)
-            for i, matrix in enumerate(alternative_matrices):
-                weights, _ = compute_weights_and_cr(matrix, n_vehicles)
-                scores += criteria_weights[i] * weights
+            # Kiểm tra tính nhất quán tổng thể
+            inconsistent_matrices = []
+            if criteria_cr >= 0.1:
+                inconsistent_matrices.append("Tiêu chí tổng thể")
+            for i, cr in enumerate(consistency_ratios):
+                if cr >= 0.1:
+                    inconsistent_matrices.append(f"Tiêu chí {criteria_names[i]}")
 
-            # Tạo kết quả xếp hạng
-            ranking = [(vehicle_names[i], scores[i]) for i in range(n_vehicles)]
-            ranking.sort(key=lambda x: x[1], reverse=True)
+            if not inconsistent_matrices:
+                st.success("Tất cả ma trận đều nhất quán (CR < 0.1). Nhấn 'Tính AHP' để tiếp tục.")
+                calculate_enabled = True
+            else:
+                st.error(f"Các ma trận không nhất quán (CR ≥ 0.1): {', '.join(inconsistent_matrices)}. Vui lòng sửa file Excel.")
+                calculate_enabled = False
 
-            # Hiển thị kết quả
-            inconsistent_matrices = [i for i, cr in enumerate(consistency_ratios) if cr >= 0.1]
-            warning = f"Cảnh báo: Ma trận không nhất quán (CR ≥ 0.1) cho tiêu chí: {[criteria_names[i] for i in inconsistent_matrices]}" if inconsistent_matrices else None
+            # Nút tính AHP
+            if st.button("Tính AHP", disabled=not calculate_enabled):
+                # Tính điểm AHP
+                n_vehicles = len(vehicle_names)
+                scores = np.zeros(n_vehicles)
+                for i, matrix in enumerate(alternative_matrices):
+                    weights, _ = compute_weights_and_cr(matrix, n_vehicles)
+                    scores += criteria_weights[i] * weights
 
-            html_result = "<h3>Kết quả xếp hạng:</h3>"
-            if warning:
-                html_result += f"<p style='color:red'>{warning}</p>"
-            html_result += "<table border='1'><tr><th>Xe</th><th>Điểm AHP</th></tr>"
-            for name, score in ranking:
-                html_result += f"<tr><td>{name}</td><td>{score:.4f}</td></tr>"
-            html_result += "</table>"
-            st.markdown(html_result, unsafe_allow_html=True)
+                # Tạo kết quả xếp hạng
+                ranking = [(vehicle_names[i], scores[i]) for i in range(n_vehicles)]
+                ranking.sort(key=lambda x: x[1], reverse=True)
 
-            # Biểu đồ cột
-            fig = px.bar(x=[name for name, score in ranking], y=[score for name, score in ranking],
-                         labels={'x': 'Xe', 'y': 'Điểm AHP'}, title='Xếp hạng xe')
-            fig.update_traces(texttemplate='%{y:.4f}', textposition='outside')
-            fig.update_layout(xaxis={'categoryorder': 'total descending'})
-            st.plotly_chart(fig)
+                # Hiển thị kết quả
+                html_result = "<h3>Kết quả xếp hạng:</h3>"
+                html_result += "<table border='1'><tr><th>Xe</th><th>Điểm AHP</th></tr>"
+                for name, score in ranking:
+                    html_result += f"<tr><td>{name}</td><td>{score:.4f}</td></tr>"
+                html_result += "</table>"
+                st.markdown(html_result, unsafe_allow_html=True)
 
-            # Biểu đồ tròn
-            weights_fig = px.pie(values=criteria_weights, names=criteria_names,
-                                title='Trọng số tiêu chí', hole=0.4)
-            weights_fig.update_traces(textinfo='percent+label')
-            st.plotly_chart(weights_fig)
+                # Biểu đồ cột
+                fig = px.bar(x=[name for name, score in ranking], y=[score for name, score in ranking],
+                             labels={'x': 'Xe', 'y': 'Điểm AHP'}, title='Xếp hạng xe')
+                fig.update_traces(texttemplate='%{y:.4f}', textposition='outside')
+                fig.update_layout(xaxis={'categoryorder': 'total descending'})
+                st.plotly_chart(fig)
 
-            # Lưu log (chỉ lưu một lần)
-            if not st.session_state.excel_log_saved:
+                # Biểu đồ tròn
+                weights_fig = px.pie(values=criteria_weights, names=criteria_names,
+                                    title='Trọng số tiêu chí', hole=0.4)
+                weights_fig.update_traces(textinfo='percent+label')
+                st.plotly_chart(weights_fig)
+
+                # Lưu log
                 log_data = {
                     "weights": criteria_weights.tolist(),
                     "top_result": [[name, score] for name, score in ranking[:3]],
@@ -700,6 +706,8 @@ def excel_calculation_step():
                                           for j in range(i + 1, len(vehicle_names))}
                                          for matrix in alternative_matrices]
                 }
+                # Debug dữ liệu log
+                st.write("Debug: Dữ liệu gửi để lưu log:", log_data)
                 response = safe_api_request("POST", "log_calculation", log_data)
                 if "error" in response:
                     st.error(f"Lỗi khi lưu log: {response['error']} (Mã trạng thái: {response.get('status_code', 'N/A')})")
@@ -707,17 +715,17 @@ def excel_calculation_step():
                     st.success("Lưu log tính toán thành công.")
                     st.session_state.excel_log_saved = True
 
-            # Xuất file Excel
-            excel_data = create_excel_file(
-                criteria_names, vehicle_names, criteria_matrix, alternative_matrices,
-                criteria_weights, ranking, consistency_ratios, criteria_cr
-            )
-            st.download_button(
-                label="Xuất kết quả Excel",
-                data=excel_data,
-                file_name="ahp_results_excel.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+                # Xuất file Excel
+                excel_data = create_excel_file(
+                    criteria_names, vehicle_names, criteria_matrix, alternative_matrices,
+                    criteria_weights, ranking, consistency_ratios, criteria_cr
+                )
+                st.download_button(
+                    label="Xuất kết quả Excel",
+                    data=excel_data,
+                    file_name="ahp_results_excel.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
 
         except Exception as e:
             st.error(f"Lỗi khi xử lý file Excel: {str(e)}")
