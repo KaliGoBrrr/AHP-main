@@ -6,4 +6,4 @@ uvicorn main:app (lệnh để chạy BE)
 
 streamlit run interface.py (lệnh để chạy FE)
 
-Hehotroraquyetdinh.xlsx (file excel chứ dữ liệu để tính AHP)
+DuLieuTestDung.xlsx và DuLieuTestSai.xlsx (file excel chứ dữ liệu để tính AHP)
